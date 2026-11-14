@@ -1,0 +1,50 @@
+experiment: ladp_llava_vizwiz_stage1_diagnostic
+
+model:
+  name: llava-hf/llava-1.5-7b-hf
+  precision: fp16            # use fp32 if GPU has headroom
+  device: cuda               # change to cpu for local smoke-tests
+
+clip:
+  name: ViT-L-14-336
+  pretrained: openai         # same CLIP backbone LLaVA-1.5 uses
+
+data:
+  coco_train_images: data/coco/train2017
+  vizwiz_images:     data/vizwiz/val
+  vizwiz_questions:  data/vizwiz/val.json
+  cache_dir:         data/cache             # where E,T tensors are saved
+  vizwiz_tuning_n:   1000                   # examples to use from tuning split
+  vizwiz_heldout_start: 3800               # index where held-out begins
+
+loss:
+  reconstructor: mlp3        # mlp1 | mlp2 | mlp3
+  distance: mse              # mse | norm_relative | cosine
+  norm: robust               # robust (p5/p95) | per_image (min-max)
+  hidden_dim: 2048
+  dropout: 0.1
+
+relevance:
+  scorer: clip_cosine        # clip_cosine (FIXED) | llm_dot (ablation)
+  norm: minmax               # minmax | rank
+  centring: false
+
+priority:
+  mode: additive             # additive | multiplicative
+  alpha: 0.5
+  beta: 0.5
+
+training:
+  epochs: 30
+  lr: 1.0e-4
+  batch_size: 128
+  patience: 5                # early stopping
+  seed: 42
+  num_workers: 4
+  val_fraction: 0.05         # fraction of COCO train used as val
+
+strategy:
+  name: hard_threshold
+  top_k: 144
+
+output_dir: results/stage1_diagnostic/

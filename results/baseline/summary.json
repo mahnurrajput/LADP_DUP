@@ -1,0 +1,31 @@
+{
+  "n_total": 4319,
+  "n_tuning": 3800,
+  "n_heldout": 519,
+  "tuning_vqa_acc": 0.5281842105263117,
+  "tuning_by_answer_type": {
+    "unanswerable": {
+      "n": 1239,
+      "acc": 0.7450363196125903
+    },
+    "other": {
+      "n": 2345,
+      "acc": 0.3977825159914689
+    },
+    "yes/no": {
+      "n": 178,
+      "acc": 0.7511235955056179
+    },
+    "number": {
+      "n": 38,
+      "acc": 0.4605263157894737
+    }
+  },
+  "latency_ms_median": 373.7170696258545,
+  "latency_ms_p95": 473.1285572052002,
+  "peak_vram_gib": 13.56648063659668,
+  "visual_tokens": 576,
+  "prompt": "USER: <image>\n{q} When the provided information is insufficient, respond with 'Unanswerable'. Answer the question using a single word or phrase. ASSISTANT:",
+  "heldout_start": 3800,
+  "note": "held-out accuracy intentionally not reported here"
+}
