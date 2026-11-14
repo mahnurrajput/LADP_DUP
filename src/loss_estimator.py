@@ -602,13 +602,27 @@ class ReconstructionTrainer:
         )
 
     # ------------------------------------------------------------------
-    def fit(self, cache_dir: str) -> Tuple[ReconstructionNet, NormStats]:
+    def fit(
+        self,
+        cache_dir: str,
+        resume_from: Optional[str] = None,
+        start_epoch: int = 1,
+        best_val_loss: float = float("inf"),
+    ) -> Tuple[ReconstructionNet, NormStats]:
         """
         Train gφ and return the best model + fitted NormStats.
 
         Parameters
         ----------
-        cache_dir : str  directory with features_{i}.pt files
+        cache_dir     : str  directory with features_{i}.pt files
+        resume_from   : str  optional checkpoint to resume from.  Either a full
+                             resume checkpoint (``last.pt``: model, optimiser,
+                             epoch, best_val_loss, patience_count) or a bare
+                             state_dict (``best.pt``), in which case
+                             ``start_epoch`` / ``best_val_loss`` must be given
+                             and a fresh optimiser is used.
+        start_epoch   : int  first epoch to run (ignored for full checkpoints)
+        best_val_loss : float best val loss so far (ignored for full checkpoints)
 
         Returns
         -------
@@ -661,12 +675,33 @@ class ReconstructionTrainer:
         # 3. Train  ---------------------------------------------------------
         optimiser = torch.optim.Adam(self.recon_net.parameters(), lr=self.lr)
 
-        best_val_loss  = float("inf")
         patience_count = 0
         os.makedirs(self.ckpt_dir, exist_ok=True)
         best_ckpt_path = os.path.join(self.ckpt_dir, "best.pt")
+        last_ckpt_path = os.path.join(self.ckpt_dir, "last.pt")
 
-        for epoch in range(1, self.epochs + 1):
+        if resume_from is not None:
+            ckpt = torch.load(resume_from, map_location=self.device, weights_only=True)
+            if isinstance(ckpt, dict) and "model" in ckpt and "optimizer" in ckpt:
+                self.recon_net.load_state_dict(ckpt["model"])
+                optimiser.load_state_dict(ckpt["optimizer"])
+                start_epoch    = int(ckpt["epoch"]) + 1
+                best_val_loss  = float(ckpt["best_val_loss"])
+                patience_count = int(ckpt["patience_count"])
+            else:
+                self.recon_net.load_state_dict(ckpt)
+                logger.warning(
+                    "Resume checkpoint has weights only — optimiser state starts fresh."
+                )
+            logger.info(
+                "Resumed from %s  |  start_epoch=%d  best_val_loss=%.6f  patience=%d",
+                resume_from, start_epoch, best_val_loss, patience_count,
+            )
+            # Keep the per-epoch file-shuffle sequence identical to an
+            # uninterrupted run.
+            train_loader._epoch = start_epoch - 1
+
+        for epoch in range(start_epoch, self.epochs + 1):
             train_loss = self._train_epoch(train_loader, optimiser)
             val_loss   = self._val_epoch(val_loader)
             logger.info(
@@ -681,9 +716,21 @@ class ReconstructionTrainer:
                 logger.info("  → New best val_loss=%.6f  (checkpoint saved)", best_val_loss)
             else:
                 patience_count += 1
-                if patience_count >= self.patience:
-                    logger.info("Early stopping at epoch %d", epoch)
-                    break
+
+            torch.save(
+                {
+                    "model": self.recon_net.state_dict(),
+                    "optimizer": optimiser.state_dict(),
+                    "epoch": epoch,
+                    "best_val_loss": best_val_loss,
+                    "patience_count": patience_count,
+                },
+                last_ckpt_path,
+            )
+
+            if patience_count >= self.patience:
+                logger.info("Early stopping at epoch %d", epoch)
+                break
 
         # Load best weights
         self.recon_net.load_state_dict(
