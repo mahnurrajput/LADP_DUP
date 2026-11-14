@@ -68,7 +68,7 @@ def setup_logging(output_dir: Path) -> None:
         format=fmt,
         datefmt=datefmt,
         handlers=[
-            logging.FileHandler(log_path, mode="a"),
+            logging.FileHandler(log_path, mode="a", encoding="utf-8"),
             logging.StreamHandler(sys.stdout),
         ],
     )
