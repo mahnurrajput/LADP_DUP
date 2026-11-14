@@ -53,7 +53,8 @@ pilot can be reproduced and compared.
 |---|---|
 | `main` | The original implementation: the small model only (named `mlp3`, 14,685,184 params), before resume support. Kept unchanged. |
 | `feat/faryal/mlp-small-reconstruction-module` | `main` + exactly the code that trained the FYP-1 pilot (commit `9a488d8`: `mlp3` with resume support), the pilot's validation split and `docs/PILOT_MLP3_SMALL.md`. |
-| `feat/faryal/mlp-27.3-reconstruction-module` (this branch) | Built on the small-model branch. Adds `mlp3_paper` (27,282,432 params) next to `mlp3_small` (alias `mlp3`), the paper training setup (AdamW, warm-up + cosine, clipping), the audit fixes F1–F11 (`docs/AUDIT_mlp3_paper.md`, `docs/CHANGES_audit_fixes.md`), the resume fixes R1/R3 (`docs/CHANGES_R1_R3.md`), the resumable / failure-aware feature cache, the configs above and the tests. |
+| `feat/faryal/stage1-diagnostic` (this branch) | Built on the 27.3M branch. The fixed Stage-1 diagnostic: E/T captured at the projector, baseline prompt and official VQA metric shared through `src/vqa_eval.py`, project-root paths, checkpoint / NormStats pairing check, KNOR and correlation fixes, the optional loss-normalisation analysis, and their tests (`docs/AUDIT_full_codebase.md`, `docs/CHANGES_diagnostic.md`). |
+| `feat/faryal/mlp-27.3-reconstruction-module` | Built on the small-model branch. Adds `mlp3_paper` (27,282,432 params) next to `mlp3_small` (alias `mlp3`), the paper training setup (AdamW, warm-up + cosine, clipping), the audit fixes F1–F11 (`docs/AUDIT_mlp3_paper.md`, `docs/CHANGES_audit_fixes.md`), the resume fixes R1/R3 (`docs/CHANGES_R1_R3.md`), the resumable / failure-aware feature cache, the configs above and the tests. |
 
 ### Training each architecture (on this branch)
 
@@ -157,11 +158,14 @@ python scripts/train_recon.py --config configs/base_llava_vizwiz.yaml
 python scripts/train_recon.py --config configs/base_llava_vizwiz.yaml --resume checkpoints/recon_full_mlp3_paper/last.pt
 
 # 4. Stage-1 diagnostic: does connector loss predict answer errors?
-#    NOTE: run_diagnostic.py on this branch is the ORIGINAL version. Its known bugs
-#    (E taken from the wrong CLIP layer, crash on VizWiz answer dicts, prompt and
-#    metric different from the baseline) are fixed in separate, not-yet-merged work.
-#    Do not use it for results from this branch.
+#    Tuning split only (first data.vizwiz_tuning_n examples, never index >= 3800).
+#    Same prompt, decoding and official VQA metric as the baseline (src/vqa_eval.py);
+#    E/T captured at the projector, i.e. exactly the cached features
+#    (src/feature_capture.py). Fixes listed in docs/CHANGES_diagnostic.md.
 python scripts/run_diagnostic.py --config configs/pilot_mlp3_small.yaml
+
+# Optional: loss normalisation on COCO vs VizWiz tuning (writes results/normalisation_analysis/)
+python scripts/analyze_loss_normalisation.py --config configs/pilot_mlp3_small.yaml
 
 # Throughput of on-the-fly feature extraction and g_φ training (a few minutes)
 python scripts/bench_feature_throughput.py --config configs/base_llava_vizwiz.yaml   # uses $HF_HOME
@@ -240,7 +244,7 @@ Safety checks (added after the implementation audit, `docs/AUDIT_mlp3_paper.md`)
 ## Tests
 
 ```bash
-python -m pytest tests -q          # 237 tests on this branch (real-data tests skip if the cache, weights or GPU are missing)
+python -m pytest tests -q          # 317 tests on this branch (real-data tests skip if the cache, weights or GPU are missing)
 ```
 
 ## Status
@@ -253,7 +257,7 @@ python -m pytest tests -q          # 237 tests on this branch (real-data tests s
 | g_φ `mlp3_paper` + AdamW/warm-up/cosine | Implemented, audited and unit-tested; not trained yet |
 | Full-COCO cache (118,287 images) | Planned: needs ≥ 61.3 GB more free space on E: |
 | On-the-fly E/T extraction (`VisionProjector`) | Implemented; matches cached features exactly |
-| Stage-1 diagnostic (KNOR, loss–error correlation) | Pending |
+| Stage-1 diagnostic (KNOR, loss–error correlation) | Fixed and tested; not run yet |
 | Preservation strategies (HT, SR, HRR) | Not started |
 
 ## Datasets and models

@@ -68,6 +68,18 @@ def main() -> None:
     print(f"[3] E={tuple(f['E'].shape)} T={tuple(f['T'].shape)}  "
           f"max|T - model.get_image_features| = {diff:.2e}  "
           f"{'PASSED' if diff < 1e-2 else 'MISMATCH'}")
+    # [3b] E must be the projector *input* (= cache / g_phi training features),
+    # not the vision tower's final layer (audit C1): capture it at the projector.
+    sys.path.insert(0, str(ROOT / "src"))
+    from src.feature_capture import LlavaFeatureCapture
+    with LlavaFeatureCapture(model) as cap, torch.no_grad():
+        model.get_image_features(pixel_values=pv, vision_feature_layer=model.config.vision_feature_layer,
+                                 vision_feature_select_strategy=model.config.vision_feature_select_strategy)
+    dE = (cap.E.float() - f["E"].float().cpu()).abs().max().item()
+    dEf = (cap.E_final.float() - f["E"].float().cpu()).abs().max().item()
+    ok_e = dE < 1e-2 and dEf > 1e-2
+    print(f"[3b] max|E_adapter - projector input| = {dE:.2e} (must be ~0); "
+          f"max|E_adapter - final layer| = {dEf:.2e} (must be > 0)  {'PASSED' if ok_e else 'MISMATCH'}")
 
     # [4] baseline answers
     scores, lat = [], []
