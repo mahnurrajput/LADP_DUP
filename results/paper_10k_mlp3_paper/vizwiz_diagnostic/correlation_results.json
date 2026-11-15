@@ -1,20 +1,20 @@
 {
   "primary_loss_vs_vqa_error": {
-    "pearson_r": 0.16386662454714235,
-    "pearson_p": 1.8813227983937205e-07,
-    "spearman_r": 0.18965658814196495,
-    "spearman_p": 1.4949233581195342e-09,
+    "pearson_r": 0.1574812443060314,
+    "pearson_p": 5.58541044754266e-07,
+    "spearman_r": 0.18182484391136342,
+    "spearman_p": 6.998876926442523e-09,
     "outcome": "vqa_error = 1 - VQA accuracy",
     "n": 1000,
     "degenerate": false
   },
   "secondary_loss_vs_no_annotator_match": {
-    "pearson_r": 0.14252500499738532,
-    "pearson_p": 6.053388272269042e-06,
-    "spearman_r": 0.15781016668369802,
-    "spearman_p": 5.286440613556256e-07,
-    "mean_loss_correct": 0.14864082985737345,
-    "mean_loss_wrong": 0.16144456165029278,
+    "pearson_r": 0.13756128916713184,
+    "pearson_p": 1.2689161505564183e-05,
+    "spearman_r": 0.1511624952663519,
+    "spearman_p": 1.5723231740079096e-06,
+    "mean_loss_correct": 0.14878792753511103,
+    "mean_loss_wrong": 0.1611606728462946,
     "degenerate": false
   }
 }
