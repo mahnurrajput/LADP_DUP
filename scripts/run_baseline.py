@@ -24,35 +24,19 @@ sys.path.insert(0, str(ROOT))
 import torch
 from PIL import Image
 
-from src.connector_adapter import LlavaAdapter
-
-PROMPT = ("USER: <image>\n{q} When the provided information is insufficient, "
-          "respond with 'Unanswerable'. Answer the question using a single word or phrase. ASSISTANT:")
-
-# --- VQA answer normalisation (standard VQA-eval style) ---------------------
-_NUM = {"none": "0", "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
-        "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"}
-_ART = {"a", "an", "the"}
-_PUNCT = re.compile(r"[;/\[\]\"{}()=+\\_\-><@`,?!*#%^&$:|~]")
+# Prompt, decoding and metric live in src/vqa_eval.py, shared with
+# run_diagnostic.py and the LADP evaluation (moved there unchanged).
+from src.vqa_eval import GENERATION, PROMPT, answer_strings, norm, vqa_acc  # noqa: E402,F401
 
 
-def norm(a: str) -> str:
-    a = a.replace("\n", " ").replace("\t", " ").strip().lower()
-    a = _PUNCT.sub(" ", a)
-    a = re.sub(r"(?<!\d)\.(?!\d)", "", a)  # keep decimal points
-    words = [_NUM.get(w, w) for w in a.split() if w not in _ART]
-    return " ".join(words)
-
-
-def vqa_acc(pred: str, answers: list[str]) -> float:
-    """Official VQA accuracy: mean over the 10 leave-one-out subsets of min(1, #match/3)."""
-    p = norm(pred)
-    gts = [norm(a) for a in answers]
-    accs = []
-    for i in range(len(gts)):
-        others = gts[:i] + gts[i + 1:]
-        accs.append(min(1.0, sum(g == p for g in others) / 3.0))
-    return sum(accs) / len(accs)
+def load_done(pred_path: Path) -> dict:
+    """Records already written by an earlier (interrupted) run, keyed by idx."""
+    done = {}
+    if pred_path.exists():
+        for line in open(pred_path, encoding="utf-8"):
+            if line.strip():
+                r = json.loads(line); done[r["idx"]] = r
+    return done
 
 
 def main() -> None:
@@ -70,10 +54,7 @@ def main() -> None:
         data = data[: args.limit]
     img_dir = ROOT / "data/vizwiz/val"
 
-    done = {}
-    if pred_path.exists():
-        for line in open(pred_path, encoding="utf-8"):
-            r = json.loads(line); done[r["idx"]] = r
+    done = load_done(pred_path)
     print(f"{len(data)} examples, {len(done)} already done", flush=True)
 
     ad = LlavaAdapter(device="cuda", precision="fp16")
@@ -90,12 +71,12 @@ def main() -> None:
             inp["pixel_values"] = inp["pixel_values"].to(torch.float16)
             torch.cuda.synchronize(); t = time.time()
             with torch.no_grad():
-                out = model.generate(**inp, max_new_tokens=16, do_sample=False)
+                out = model.generate(**inp, **GENERATION)
             torch.cuda.synchronize(); lat = time.time() - t
             pred = proc.decode(out[0, inp["input_ids"].shape[1]:], skip_special_tokens=True).strip()
             rec = {"idx": idx, "image": ex["image"], "question": ex["question"], "pred": pred,
                    "answer_type": ex.get("answer_type"), "answerable": ex.get("answerable"),
-                   "acc": vqa_acc(pred, [a["answer"] for a in ex["answers"]]),
+                   "acc": vqa_acc(pred, answer_strings(ex["answers"])),
                    "latency_ms": lat * 1000, "split": "heldout" if idx >= args.heldout_start else "tuning"}
             fh.write(json.dumps(rec) + "\n"); fh.flush()
             done[idx] = rec

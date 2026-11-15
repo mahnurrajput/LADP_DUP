@@ -136,22 +136,15 @@ class KNORDiagnostic:
         #         (the +1 is because index i itself will appear at rank 0
         #         with similarity ≈ 1.0 and must be excluded).
         # ------------------------------------------------------------------
-        # topk returns values and indices of the k+1 largest entries per row.
-        _, top_indices_E = sim_E.topk(self.k + 1, dim=-1, largest=True, sorted=True)
-        # top_indices_E: (M, k+1)
-
-        _, top_indices_T = sim_T.topk(self.k + 1, dim=-1, largest=True, sorted=True)
-        # top_indices_T: (M, k+1)
-
-        # ------------------------------------------------------------------
-        # Step 4: Remove self (index i) from each row.  Since similarities
-        #         are computed with L2-normalised vectors, the self-similarity
-        #         is exactly 1.0, which is the maximum.  It therefore always
-        #         occupies position 0 in the sorted indices.
-        # ------------------------------------------------------------------
-        # We drop column 0 (the self-index) → (M, k)
-        nbrs_E: Tensor = top_indices_E[:, 1:]  # (M, k)
-        nbrs_T: Tensor = top_indices_T[:, 1:]  # (M, k)
+        # Step 4: exclude each image from its own neighbourhood explicitly.
+        # (Taking top-(k+1) and dropping column 0 assumed "self" ranks first,
+        # which fails for duplicate or near-identical images, whose
+        # similarity ties with self at 1.0.)
+        eye = torch.eye(num_images, dtype=torch.bool, device=sim_E.device)
+        sim_E = sim_E.masked_fill(eye, float("-inf"))
+        sim_T = sim_T.masked_fill(eye, float("-inf"))
+        _, nbrs_E = sim_E.topk(self.k, dim=-1, largest=True, sorted=True)  # (M, k)
+        _, nbrs_T = sim_T.topk(self.k, dim=-1, largest=True, sorted=True)  # (M, k)
 
         # ------------------------------------------------------------------
         # Step 5: Compute intersection size |N_k_before ∩ N_k_after| / k.
@@ -372,12 +365,7 @@ def correlate_loss_with_error(
 
     # Convert incorrectness: 1 if wrong (not correct), 0 if right.
     errors: list[int] = [0 if c else 1 for c in correct]
-
-    # Pearson correlation.
-    pearson_r, pearson_p = scipy_stats.pearsonr(losses, errors)
-
-    # Spearman rank correlation.
-    spearman_r, spearman_p = scipy_stats.spearmanr(losses, errors)
+    pearson_r, pearson_p, spearman_r, spearman_p, degenerate = _correlations(losses, errors)
 
     # Stratified means.
     correct_losses = [l for l, c in zip(losses, correct) if c]
@@ -393,7 +381,39 @@ def correlate_loss_with_error(
         "spearman_p": float(spearman_p),
         "mean_loss_correct": mean_loss_correct,
         "mean_loss_wrong": mean_loss_wrong,
+        "degenerate": degenerate,
     }
+
+
+def _correlations(x: list, y: list):
+    """Pearson and Spearman r / p; NaN plus ``degenerate=True`` if either input is constant."""
+    if len(set(x)) < 2 or len(set(y)) < 2:
+        logger.warning("Correlation undefined: %s is constant (n=%d). Reporting NaN.",
+                       "losses" if len(set(x)) < 2 else "the outcome", len(x))
+        nan = float("nan")
+        return nan, nan, nan, nan, True
+    pr, pp = scipy_stats.pearsonr(x, y)
+    sr, sp = scipy_stats.spearmanr(x, y)
+    return float(pr), float(pp), float(sr), float(sp), False
+
+
+def correlate_loss_with_vqa(losses: list[float], vqa_accs: list[float]) -> dict:
+    """Correlation between per-image mean loss and VQA *error* = 1 - official VQA accuracy.
+
+    Uses the graded official metric (0, 1/3, 2/3, 0.9, 1, ...) rather than a
+    binary label, so partial agreement between annotators is kept.  A positive r
+    means higher loss goes with lower accuracy.
+    """
+    if len(losses) != len(vqa_accs):
+        raise ValueError(f"losses and vqa_accs differ in length ({len(losses)} vs {len(vqa_accs)}).")
+    if len(losses) < 3:
+        raise ValueError(f"At least 3 samples are required; got {len(losses)}.")
+    if any(not (0.0 <= a <= 1.0) for a in vqa_accs):
+        raise ValueError("vqa_accs must lie in [0, 1].")
+    errors = [1.0 - a for a in vqa_accs]
+    pr, pp, sr, sp, degenerate = _correlations(list(losses), errors)
+    return {"pearson_r": pr, "pearson_p": pp, "spearman_r": sr, "spearman_p": sp,
+            "outcome": "vqa_error = 1 - VQA accuracy", "n": len(losses), "degenerate": degenerate}
 
 
 # ---------------------------------------------------------------------------
