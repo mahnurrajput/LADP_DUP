@@ -215,8 +215,12 @@ def plot_loss_vs_correctness(records: List[dict], out_path: str) -> None:
     groups = [[r["mean_loss"] for r in records if r["any_match"]],
               [r["mean_loss"] for r in records if not r["any_match"]]]
     fig, ax = plt.subplots(figsize=(6, 5))
-    ax.boxplot(groups, labels=["any annotator agrees", "no annotator agrees"], patch_artist=True,
+    # Tick labels set separately: boxplot(labels=) was renamed tick_labels in
+    # matplotlib 3.9 and removed in 3.11.
+    ax.boxplot(groups, patch_artist=True,
                boxprops=dict(facecolor="#a8d8a8", color="#333"), medianprops=dict(color="#c0392b", linewidth=2))
+    ax.set_xticks([1, 2])
+    ax.set_xticklabels(["any annotator agrees", "no annotator agrees"])
     rng = random.Random(42)
     for i, g in enumerate(groups, start=1):
         s = rng.sample(g, min(200, len(g)))
