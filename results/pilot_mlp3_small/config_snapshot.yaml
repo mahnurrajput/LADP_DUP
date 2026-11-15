@@ -1,0 +1,41 @@
+experiment: ladp_llava_vizwiz_stage1_diagnostic
+model:
+  name: llava-hf/llava-1.5-7b-hf
+  precision: fp16
+  device: cuda
+clip:
+  name: ViT-L-14-336
+  pretrained: openai
+data:
+  coco_train_images: data/coco/train2017
+  vizwiz_images: data/vizwiz/val
+  vizwiz_questions: data/vizwiz/val.json
+  cache_dir: data/cache
+  vizwiz_tuning_n: 1000
+  vizwiz_heldout_start: 3800
+loss:
+  reconstructor: mlp3
+  distance: mse
+  norm: robust
+  hidden_dim: 2048
+  dropout: 0.1
+relevance:
+  scorer: clip_cosine
+  norm: minmax
+  centring: false
+priority:
+  mode: additive
+  alpha: 0.5
+  beta: 0.5
+training:
+  epochs: 30
+  lr: 0.0001
+  batch_size: 128
+  patience: 5
+  seed: 42
+  num_workers: 4
+  val_fraction: 0.05
+strategy:
+  name: hard_threshold
+  top_k: 144
+output_dir: results/stage1_diagnostic/

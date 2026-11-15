@@ -1,0 +1,63 @@
+14:57:31 | INFO | root             : E:\ladp\ladp
+14:57:31 | INFO | output_dir       : E:\ladp\ladp\results\paper_10k_mlp3_paper\vizwiz_diagnostic
+14:57:31 | INFO | recon_checkpoint : E:\ladp\ladp\checkpoints\recon_paper_10k_mlp3_paper\best.pt
+14:57:31 | INFO | norm_stats       : E:\ladp\ladp\checkpoints\recon_paper_10k_mlp3_paper\norm_stats.pt
+14:57:31 | INFO | vizwiz_questions : E:\ladp\ladp\data\vizwiz\val.json
+14:57:31 | INFO | vizwiz_images    : E:\ladp\ladp\data\vizwiz\val
+14:57:31 | INFO | norm_calibration : None
+14:57:31 | INFO | VizWiz annotations: 4319 entries; using the first 1000 (tuning split).
+14:57:32 | INFO | NormStats verified against the checkpoint (sha256 103f4dd3156e…)
+14:57:33 | INFO | g_phi mlp3_paper (27,282,432 params) | distance=mse | p5=0.0317 p95=0.2919
+14:57:33 | INFO | Loading LLaVA-1.5 'llava-hf/llava-1.5-7b-hf' on cuda (torch.float16) …
+14:57:33 | INFO | HTTP Request: GET https://huggingface.co/api/models/llava-hf/llava-1.5-7b-hf "HTTP/1.1 200 OK"
+14:57:33 | INFO | HTTP Request: GET https://huggingface.co/api/models/llava-hf/llava-1.5-7b-hf/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+14:57:34 | INFO | HTTP Request: GET https://huggingface.co/api/models/llava-hf/llava-1.5-7b-hf/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+14:57:34 | INFO | HTTP Request: GET https://huggingface.co/api/models/llava-hf/llava-1.5-7b-hf/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+14:57:34 | INFO | HTTP Request: GET https://huggingface.co/api/models/llava-hf/llava-1.5-7b-hf/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+14:57:34 | INFO | HTTP Request: GET https://huggingface.co/api/models/llava-hf/llava-1.5-7b-hf/revision/main "HTTP/1.1 200 OK"
+14:58:09 | INFO | Progress: 50/1000 | VQA acc=0.5700 | mean_loss=0.1386
+14:58:29 | INFO | Progress: 100/1000 | VQA acc=0.5850 | mean_loss=0.1461
+14:58:51 | INFO | Progress: 150/1000 | VQA acc=0.5767 | mean_loss=0.1494
+14:59:15 | INFO | Progress: 200/1000 | VQA acc=0.5850 | mean_loss=0.1483
+14:59:38 | INFO | Progress: 250/1000 | VQA acc=0.6020 | mean_loss=0.1472
+15:00:03 | INFO | Progress: 300/1000 | VQA acc=0.6003 | mean_loss=0.1471
+15:00:28 | INFO | Progress: 350/1000 | VQA acc=0.5943 | mean_loss=0.1473
+15:00:54 | INFO | Progress: 400/1000 | VQA acc=0.5813 | mean_loss=0.1486
+15:01:19 | INFO | Progress: 450/1000 | VQA acc=0.5793 | mean_loss=0.1513
+15:01:44 | INFO | Progress: 500/1000 | VQA acc=0.5840 | mean_loss=0.1517
+15:02:08 | INFO | Progress: 550/1000 | VQA acc=0.5820 | mean_loss=0.1534
+15:02:33 | INFO | Progress: 600/1000 | VQA acc=0.5770 | mean_loss=0.1539
+15:02:58 | INFO | Progress: 650/1000 | VQA acc=0.5875 | mean_loss=0.1526
+15:03:23 | INFO | Progress: 700/1000 | VQA acc=0.5961 | mean_loss=0.1514
+15:03:48 | INFO | Progress: 750/1000 | VQA acc=0.5921 | mean_loss=0.1513
+15:04:13 | INFO | Progress: 800/1000 | VQA acc=0.5917 | mean_loss=0.1520
+15:04:37 | INFO | Progress: 850/1000 | VQA acc=0.5914 | mean_loss=0.1518
+15:05:03 | INFO | Progress: 900/1000 | VQA acc=0.5883 | mean_loss=0.1517
+15:05:27 | INFO | Progress: 950/1000 | VQA acc=0.5847 | mean_loss=0.1522
+15:05:52 | INFO | Progress: 1000/1000 | VQA acc=0.5854 | mean_loss=0.1527
+15:05:52 | INFO | KNOR (k=10): mean=0.4730, std=0.1955
+
+=================================================================
+LADP Stage 1 Diagnostic — Summary Report
+=================================================================
+
+  Examples evaluated      : 1000  (VizWiz val tuning split)
+  VQA accuracy (official) : 0.5854
+  Any-annotator match     : 68.4%  (binary label; not VQA accuracy)
+  Mean patch loss         : 0.15269  (1000 examples with features)
+
+--- Loss vs VQA error (primary: error = 1 - VQA accuracy) ---
+  Pearson  r              : +0.1639  (p=1.881e-07)
+  Spearman r              : +0.1897  (p=1.495e-09)
+  (positive r: higher loss goes with lower accuracy)
+
+--- Loss vs no-annotator-match (secondary, binary) ---
+  Pearson  r              : +0.1425  (p=6.053e-06)
+  Mean loss (match / none): 0.14864 / 0.16144
+
+--- KNOR ---
+  k / mean / std          : 10 / 0.4730 / 0.1955
+  (1.0 = neighbourhoods fully preserved by the connector; no threshold is taken from the paper)
+
+  Elapsed time            : 485.3s
+=================================================================

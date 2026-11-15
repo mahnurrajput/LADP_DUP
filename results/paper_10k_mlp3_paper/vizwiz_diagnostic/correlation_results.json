@@ -1,0 +1,20 @@
+{
+  "primary_loss_vs_vqa_error": {
+    "pearson_r": 0.16386662454714235,
+    "pearson_p": 1.8813227983937205e-07,
+    "spearman_r": 0.18965658814196495,
+    "spearman_p": 1.4949233581195342e-09,
+    "outcome": "vqa_error = 1 - VQA accuracy",
+    "n": 1000,
+    "degenerate": false
+  },
+  "secondary_loss_vs_no_annotator_match": {
+    "pearson_r": 0.14252500499738532,
+    "pearson_p": 6.053388272269042e-06,
+    "spearman_r": 0.15781016668369802,
+    "spearman_p": 5.286440613556256e-07,
+    "mean_loss_correct": 0.14864082985737345,
+    "mean_loss_wrong": 0.16144456165029278,
+    "degenerate": false
+  }
+}

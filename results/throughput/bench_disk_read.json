@@ -1,0 +1,46 @@
+{
+  "when": "2026-11-14 20:13:16",
+  "cache_dir": "E:\\ladp\\ladp\\data\\cache\\coco_train",
+  "method": "CreateFileW FILE_FLAG_NO_BUFFERING|SEQUENTIAL_SCAN, 8 MiB reads, whole files in sorted order",
+  "files_read": 3390,
+  "first_index": 0,
+  "bytes_read": 20001884790,
+  "seconds": 169.64355839999916,
+  "MB_per_s": 117.90535979466992,
+  "files_per_s": 19.983075290172742,
+  "progress": [
+    {
+      "files": 500,
+      "GB": 2.9501305,
+      "MB_per_s": 113.693918417515
+    },
+    {
+      "files": 1000,
+      "GB": 5.900261,
+      "MB_per_s": 115.62443699269147
+    },
+    {
+      "files": 1500,
+      "GB": 8.8503915,
+      "MB_per_s": 116.85778237235127
+    },
+    {
+      "files": 2000,
+      "GB": 11.800522,
+      "MB_per_s": 117.87361634694852
+    },
+    {
+      "files": 2500,
+      "GB": 14.7506525,
+      "MB_per_s": 118.11326916821979
+    },
+    {
+      "files": 3000,
+      "GB": 17.700783,
+      "MB_per_s": 118.385735430822
+    }
+  ],
+  "full_cache_bytes": 697924172907,
+  "est_full_epoch_read_min": 98.65598619695525,
+  "free_bytes_now": 617370116096
+}
