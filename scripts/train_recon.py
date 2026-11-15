@@ -15,10 +15,17 @@ Prerequisites
       python scripts/cache_features.py --config configs/base_llava_vizwiz.yaml \\
                                         --split coco_train
 
-Outputs (all written to output_dir from config)
------------------------------------------------
-  checkpoints/recon/best.pt          — best model weights (state_dict)
-  checkpoints/recon/norm_stats.pt    — fitted NormStats (mean/std/p5/p95)
+Resuming
+--------
+  --resume <ckpt_dir>/last.pt                      full state (recommended)
+  --resume <ckpt_dir>/best.pt --start-epoch N --best-val X   weights only
+
+Outputs
+-------
+  <checkpoints_dir>/<training.run_name>/best.pt        — best weights (state_dict)
+  <checkpoints_dir>/<training.run_name>/last.pt        — full resume state, every epoch
+  <checkpoints_dir>/<training.run_name>/norm_stats.pt  — NormStats (mean/std/p5/p95)
+  (defaults: checkpoints_dir = checkpoints, run_name = recon)
   <output_dir>/config_snapshot.yaml  — copy of the config used for this run
   <output_dir>/train_recon.log       — full log
   <output_dir>/recon_loss_curve.png  — training/val loss plot
@@ -41,9 +48,9 @@ import matplotlib.pyplot as plt
 # ---------------------------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from loss_estimator import (  # noqa: E402
-    ReconstructionNet,
     ReconstructionTrainer,
     NormStats,
+    build_recon_net_from_config,
 )
 
 
@@ -154,24 +161,16 @@ def sanity_check(
     norm_stats_path: Path,
     cfg:             dict,
     device:          torch.device,
-) -> None:
+) -> bool:
     """Load the saved checkpoint and verify tensor shapes.
 
-    Logs a warning (but does not raise) if anything is unexpected so that
-    a shape mismatch surfaces clearly in the log without crashing the script.
+    Returns True if everything is as expected.  On failure it logs the error
+    and returns False; main() then exits with a non-zero code.
     """
     logging.info("Running post-training sanity check…")
 
-    loss_cfg = cfg.get("loss", {})
-    hidden_dim = int(loss_cfg.get("hidden_dim", 2048))
-    depth      = loss_cfg.get("reconstructor", "mlp3")
-    dropout    = float(loss_cfg.get("dropout", 0.1))
-
     try:
-        net = ReconstructionNet(
-            d_in=4096, d_out=1024,
-            hidden_dim=hidden_dim, depth=depth, dropout=dropout,
-        )
+        net = build_recon_net_from_config(cfg)
         state = torch.load(ckpt_path, map_location=device, weights_only=True)
         net.load_state_dict(state)
         net.to(device).eval()
@@ -195,64 +194,11 @@ def sanity_check(
         logging.info("  NormStats loaded OK.  E_mean: %s  T_mean: %s",
                      tuple(ns.E_mean.shape), tuple(ns.T_mean.shape))
         logging.info("Sanity check passed.")
+        return True
 
     except Exception as exc:
-        logging.warning("Sanity check FAILED: %s", exc, exc_info=True)
-
-
-# ---------------------------------------------------------------------------
-# Monkey-patch ReconstructionTrainer to record per-epoch losses
-# ---------------------------------------------------------------------------
-
-class _TrackingTrainer(ReconstructionTrainer):
-    """Thin subclass that records train/val loss per epoch for plotting.
-
-    The parent class already does the heavy lifting; we only override the
-    per-epoch loop inside ``fit`` to intercept the values before they are
-    discarded.  We achieve this by wrapping ``_train_epoch`` and
-    ``_val_epoch`` so the original logic is entirely preserved.
-    """
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.train_loss_history: list[float] = []
-        self.val_loss_history:   list[float] = []
-
-    def fit(self, cache_dir: str, **kwargs):  # type: ignore[override]
-        """Delegate to parent fit() while recording per-epoch losses.
-
-        We wrap the private _train_epoch / _val_epoch methods at runtime so
-        that the core logic in the parent class is never duplicated.
-        """
-        import torch as _torch
-        import torch.nn.functional as _F
-
-        parent = super()
-
-        # Store original methods.
-        orig_train = self._train_epoch
-        orig_val   = self._val_epoch
-
-        def tracked_train(loader, opt):
-            loss = orig_train(loader, opt)
-            self.train_loss_history.append(loss)
-            return loss
-
-        def tracked_val(loader):
-            loss = orig_val(loader)
-            self.val_loss_history.append(loss)
-            return loss
-
-        self._train_epoch = tracked_train  # type: ignore[method-assign]
-        self._val_epoch   = tracked_val    # type: ignore[method-assign]
-
-        result = parent.fit(cache_dir, **kwargs)
-
-        # Restore originals (not strictly needed but keeps object tidy).
-        self._train_epoch = orig_train  # type: ignore[method-assign]
-        self._val_epoch   = orig_val    # type: ignore[method-assign]
-
-        return result
+        logging.error("Sanity check FAILED: %s", exc, exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -278,11 +224,13 @@ def main() -> None:
              "or checkpoints/recon/best.pt (weights only; needs --start-epoch "
              "and --best-val).",
     )
-    parser.add_argument("--start-epoch", type=int, default=1,
+    parser.add_argument("--start-epoch", type=int, default=None,
                         help="First epoch to run when resuming from weights only.")
-    parser.add_argument("--best-val", type=float, default=float("inf"),
+    parser.add_argument("--best-val", type=float, default=None,
                         help="Best val loss so far when resuming from weights only.")
     args = parser.parse_args()
+    if not args.resume and (args.start_epoch is not None or args.best_val is not None):
+        parser.error("--start-epoch / --best-val are only valid together with --resume")
 
     # ------------------------------------------------------------------
     # Load config.
@@ -312,8 +260,11 @@ def main() -> None:
 
     coco_cache_dir = cache_dir / "coco_train"
 
-    # checkpoints_dir lives alongside output_dir for easy retrieval.
-    checkpoints_dir = project_root / "checkpoints"
+    # Checkpoints go to <checkpoints_dir>/<training.run_name>/ (default
+    # checkpoints/recon/) so pilot and new runs never overwrite each other.
+    checkpoints_dir = Path(cfg.get("checkpoints_dir", "checkpoints"))
+    if not checkpoints_dir.is_absolute():
+        checkpoints_dir = project_root / checkpoints_dir
 
     # ------------------------------------------------------------------
     # Setup logging early so every subsequent step is captured.
@@ -380,22 +331,17 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Build ReconstructionNet from config.
     # ------------------------------------------------------------------
-    loss_cfg   = cfg.get("loss", {})
-    depth      = loss_cfg.get("reconstructor", "mlp3")
-    hidden_dim = int(loss_cfg.get("hidden_dim", 2048))
-    dropout    = float(loss_cfg.get("dropout", 0.1))
-
-    recon_net = ReconstructionNet(
-        d_in=4096,
-        d_out=1024,
-        hidden_dim=hidden_dim,
-        depth=depth,
-        dropout=dropout,
-    )
+    # loss.reconstructor is required (no silent fallback to the pilot model)
+    # and loss.expected_params, if set, must match the built model.
+    try:
+        recon_net = build_recon_net_from_config(cfg)
+    except ValueError as exc:
+        logging.error("Invalid model config: %s", exc)
+        sys.exit(2)
     n_params = recon_net.param_count()
     logging.info(
         "ReconstructionNet: depth=%s  hidden_dim=%d  dropout=%.2f  params=%s",
-        depth, hidden_dim, dropout, f"{n_params:,}",
+        recon_net.depth, recon_net.hidden_dim, recon_net.dropout_p, f"{n_params:,}",
     )
 
     # ------------------------------------------------------------------
@@ -408,8 +354,11 @@ def main() -> None:
     # ------------------------------------------------------------------
     cfg_for_trainer = dict(cfg)
     cfg_for_trainer["checkpoints_dir"] = str(checkpoints_dir)
+    fv = cfg.get("training", {}).get("fixed_val_images")
+    if fv and not Path(fv).is_absolute():
+        cfg_for_trainer["training"] = dict(cfg["training"], fixed_val_images=str(project_root / fv))
 
-    trainer = _TrackingTrainer(recon_net, cfg_for_trainer, device=device_str)
+    trainer = ReconstructionTrainer(recon_net, cfg_for_trainer, device=device_str)
 
     # ------------------------------------------------------------------
     # Train.
@@ -420,39 +369,64 @@ def main() -> None:
         if not resume_path.exists():
             logging.error("Resume checkpoint not found: %s", resume_path)
             sys.exit(1)
-        fit_kwargs = {
-            "resume_from": str(resume_path),
-            "start_epoch": args.start_epoch,
-            "best_val_loss": args.best_val,
-        }
-        # Seed loss-curve history with the epochs already logged before the
-        # interruption so the final plot covers the whole run.
-        import re
-        prev: dict[int, tuple[float, float]] = {}
-        log_path = output_dir / "train_recon.log"
-        pat = re.compile(r"Epoch (\d+)/\d+ \| train_loss=([\d.]+) \| val_loss=([\d.]+)")
-        for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            m = pat.search(line)
-            if m:
-                prev[int(m.group(1))] = (float(m.group(2)), float(m.group(3)))
-        for ep in sorted(e for e in prev if e < args.start_epoch):
-            trainer.train_loss_history.append(prev[ep][0])
-            trainer.val_loss_history.append(prev[ep][1])
-        logging.info("Resuming from %s (%d earlier epoch(s) recovered from log)",
-                     resume_path, len(trainer.train_loss_history))
+        ckpt = torch.load(resume_path, map_location="cpu", weights_only=True)
+        full = isinstance(ckpt, dict) and "model" in ckpt and "optimizer" in ckpt
+        if full:
+            if args.start_epoch is not None or args.best_val is not None:
+                logging.warning("--start-epoch / --best-val are ignored: %s is a full "
+                                "checkpoint and carries its own epoch and best loss.",
+                                resume_path.name)
+            start_epoch = int(ckpt["epoch"]) + 1
+            fit_kwargs = {"resume_from": str(resume_path)}
+        else:
+            if args.start_epoch is None or args.best_val is None:
+                logging.error("%s holds weights only: pass both --start-epoch and "
+                              "--best-val (or resume from last.pt).", resume_path.name)
+                sys.exit(1)
+            start_epoch = args.start_epoch
+            fit_kwargs = {"resume_from": str(resume_path),
+                          "start_epoch": args.start_epoch,
+                          "best_val_loss": args.best_val}
+        has_history = full and "history" in ckpt
+        del ckpt
+        if not has_history and start_epoch > 1:
+            # Older checkpoints carry no loss history: recover epochs
+            # 1..start_epoch-1 from the log, using only the most recent run
+            # that logged them (later lines win) and refusing gaps.
+            import re
+            prev: dict[int, tuple[float, float]] = {}
+            log_path = output_dir / "train_recon.log"
+            pat = re.compile(r"Epoch (\d+)/\d+ \| train_loss=([\d.]+) \| val_loss=([\d.]+)")
+            if log_path.exists():
+                for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    m = pat.search(line)
+                    if m:
+                        ep = int(m.group(1))
+                        if ep == 1:
+                            prev = {}       # a new run started: forget older runs
+                        prev[ep] = (float(m.group(2)), float(m.group(3)))
+            wanted = list(range(1, start_epoch))
+            if all(ep in prev for ep in wanted):
+                for ep in wanted:
+                    trainer.train_loss_history.append(prev[ep][0])
+                    trainer.val_loss_history.append(prev[ep][1])
+            else:
+                missing = [ep for ep in wanted if ep not in prev]
+                logging.warning("Could not recover epochs %s from %s; the loss curve "
+                                "will cover only the resumed epochs.", missing, log_path)
+        logging.info("Resuming from %s at epoch %d (%d earlier epoch(s) in history)",
+                     resume_path, start_epoch, len(trainer.train_loss_history))
 
     logging.info("Starting training…")
     t0 = time.time()
 
     try:
         best_net, norm_stats = trainer.fit(str(coco_cache_dir), **fit_kwargs)
-    except FileNotFoundError as exc:
-        logging.error(
-            "Training failed — could not load feature files: %s\n"
-            "Ensure cache_features.py completed without errors.",
-            exc,
-        )
-        sys.exit(1)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        # Includes the refusals added for safety: incomplete / legacy cache,
+        # wrong image count, resume mismatch, missing best.pt, non-finite loss.
+        logging.error("Training stopped: %s", exc, exc_info=True)
+        sys.exit(2)
 
     elapsed = time.time() - t0
     logging.info("Training complete in %.1f s  (%.1f min)", elapsed, elapsed / 60)
@@ -472,16 +446,17 @@ def main() -> None:
     else:
         logging.warning(
             "No per-epoch loss history was recorded — loss curve will not be generated.  "
-            "This is unexpected; check that _TrackingTrainer is working correctly."
+            "This is unexpected; check ReconstructionTrainer.fit()."
         )
 
     # ------------------------------------------------------------------
     # Post-training sanity check.
     # ------------------------------------------------------------------
     if ckpt_path.exists() and norm_stats_path.exists():
-        sanity_check(ckpt_path, norm_stats_path, cfg, device)
+        sanity_ok = sanity_check(ckpt_path, norm_stats_path, cfg, device)
     else:
-        logging.warning(
+        sanity_ok = False
+        logging.error(
             "Expected checkpoint or norm_stats not found after training.  "
             "ckpt=%s  norm_stats=%s",
             ckpt_path, norm_stats_path,
@@ -496,6 +471,9 @@ def main() -> None:
     logging.info("=" * 65)
     logging.info("TRAINING SUMMARY")
     logging.info("=" * 65)
+    if trainer.val_ref_loss_history:
+        logging.info("  Best val_ref MSE    : %.6f  (fixed reference images; comparable with the pilot)",
+                     min(trainer.val_ref_loss_history))
     logging.info("  Epochs run          : %d / %d  (early stopping may apply)",
                  n_epochs_run, trainer.epochs)
     logging.info("  Best val MSE loss   : %.6f", best_val)
@@ -518,6 +496,9 @@ def main() -> None:
         norm_stats.L_p5, norm_stats.L_p95,
     )
 
+    if not sanity_ok:
+        logging.error("Post-training sanity check failed; exiting with code 3.")
+        sys.exit(3)
     logging.info("Done.  Next step: run the VizWiz evaluation pipeline.")
 
 

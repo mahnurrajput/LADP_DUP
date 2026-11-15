@@ -1,9 +1,16 @@
-experiment: ladp_llava_vizwiz_stage1_diagnostic
+experiment: ladp_llava_vizwiz_stage1_full_coco_mlp3_paper
+
+# TARGET RUN (FYP-2): g_phi trained as in Lost in Embeddings (arXiv 2509.11986;
+# code lyan62/vlm-info-loss, scripts/reconstruct_embeddings_parallel.py) on the
+# FULL COCO 2017 train set (118,287 images, all 576 patches per image).
+# Deliberate deviations are marked DEVIATION.
+# Other configs:  configs/pilot_mlp3_small.yaml  (FYP-1 pilot, 10k, mlp3_small, Adam)
+#                 configs/paper_10k_mlp3_paper.yaml (paper setup on the pilot's 10k images)
 
 model:
   name: llava-hf/llava-1.5-7b-hf
-  precision: fp16            # use fp32 if GPU has headroom
-  device: cuda               # change to cpu for local smoke-tests
+  precision: fp16
+  device: cuda
 
 clip:
   name: ViT-L-14-336
@@ -14,11 +21,15 @@ data:
   vizwiz_images:     data/vizwiz/val
   vizwiz_questions:  data/vizwiz/val.json
   cache_dir:         data/cache             # where E,T tensors are saved
+  max_images:        null     # null = all 118,287 COCO train2017 images (source: "COCO 2017 train set")
+  require_complete_cache: true   # trainer refuses a partially built cache
+  expected_images:   118287   # full COCO train2017; a smaller cache (e.g. the 10k pilot cache) is refused
   vizwiz_tuning_n:   1000                   # examples to use from tuning split
   vizwiz_heldout_start: 3800               # index where held-out begins
 
 loss:
-  reconstructor: mlp3        # mlp1 | mlp2 | mlp3
+  reconstructor: mlp3_paper  # REQUIRED: mlp1 | mlp2 | mlp3_small (14.7M, pilot) | mlp3_paper (27.3M, source)
+  expected_params: 27282432  # build fails if the model has a different size
   distance: mse              # mse | norm_relative | cosine
   norm: robust               # robust (p5/p95) | per_image (min-max)
   hidden_dim: 2048
@@ -35,16 +46,32 @@ priority:
   beta: 0.5
 
 training:
+  run_name: recon_full_mlp3_paper   # checkpoints go to <checkpoints_dir>/<run_name>/
   epochs: 30
   lr: 1.0e-4
-  batch_size: 128
-  patience: 5                # early stopping
+  batch_size: 73728          # = 128 images x 576 patches (source: "total batch size of 128",
+                             # one item = one image). DEVIATION: the source code also
+                             # accumulates 4 micro-batches per optimiser step; we do not.
+  files_per_shard: 128       # one shard = one batch of 128 whole images
+  optimizer: adamw           # adam | adamw
+  weight_decay: null         # null = torch default (AdamW 0.01, as in the source)
+  scheduler: warmup_cosine   # none | warmup_cosine
+  warmup_steps: 2000         # source value; ~7.6% of 26,340 steps for 30 epochs here
+  warmup_ratio: null         # set (e.g. 0.05) to override warmup_steps for small runs
+  min_lr_ratio: 0.01         # cosine decays to 1% of lr (source: eta_min = 0.01 * lr)
+  grad_clip: 1.0             # max grad norm; null = off
+  loss_reduction: mean       # mean = nn.MSELoss() as in the source
+  patience: 10               # early stopping (source: 10)
+  min_delta: 1.0e-3          # improvement must exceed this (source: 1e-3)
   seed: 42
   num_workers: 4
-  val_fraction: 0.05         # fraction of COCO train used as val
+  val_fraction: 0.05         # DEVIATION: source splits 80/20; both split BY IMAGE
+  fixed_val_images: configs/splits/coco_pilot_val500.json   # pilot's 500 val images stay in val
+                             # and are also scored separately (val_ref_loss) for comparison
 
 strategy:
   name: hard_threshold
   top_k: 144
 
-output_dir: results/stage1_diagnostic/
+checkpoints_dir: checkpoints
+output_dir: results/full_mlp3_paper/

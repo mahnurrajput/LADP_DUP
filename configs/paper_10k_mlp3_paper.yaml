@@ -1,0 +1,71 @@
+experiment: ladp_llava_vizwiz_stage1_paper_10k_mlp3_paper
+
+# Paper-style g_phi (mlp3_paper, AdamW, warm-up + cosine, clip 1.0, patience 10,
+# min_delta 1e-3, batch 128 images) on EXACTLY the pilot's 10,000 images and
+# split (first 10,000 sorted COCO images; the pilot's 500 val images). Isolates
+# the effect of architecture/optimiser from the effect of more data.
+# Short run => warm-up as a fraction of steps (2000 steps would be ~90%).
+
+model:
+  name: llava-hf/llava-1.5-7b-hf
+  precision: fp16
+  device: cuda
+
+clip:
+  name: ViT-L-14-336
+  pretrained: openai
+
+data:
+  coco_train_images: data/coco/train2017
+  vizwiz_images:     data/vizwiz/val
+  vizwiz_questions:  data/vizwiz/val.json
+  cache_dir:         data/cache
+  max_images:        10000
+  subset_mode:       first    # files 0-9999 = the pilot's images, also after the full cache exists
+  vizwiz_tuning_n:   1000
+  vizwiz_heldout_start: 3800
+
+loss:
+  reconstructor: mlp3_paper
+  expected_params: 27282432
+  distance: mse
+  norm: robust
+  hidden_dim: 2048
+  dropout: 0.1
+
+relevance:
+  scorer: clip_cosine
+  norm: minmax
+  centring: false
+
+priority:
+  mode: additive
+  alpha: 0.5
+  beta: 0.5
+
+training:
+  run_name: recon_paper_10k_mlp3_paper
+  epochs: 30
+  lr: 1.0e-4
+  batch_size: 73728          # 128 images
+  files_per_shard: 128
+  optimizer: adamw
+  weight_decay: null
+  scheduler: warmup_cosine
+  warmup_ratio: 0.05         # 5% of 30 x 75 = 2,250 steps -> 112 warm-up steps
+  min_lr_ratio: 0.01
+  grad_clip: 1.0
+  loss_reduction: mean
+  patience: 10
+  min_delta: 1.0e-3
+  seed: 42
+  num_workers: 4
+  val_fraction: 0.05
+  fixed_val_images: configs/splits/coco_pilot_val500.json   # identical to the pilot split
+
+strategy:
+  name: hard_threshold
+  top_k: 144
+
+checkpoints_dir: checkpoints
+output_dir: results/paper_10k_mlp3_paper/
