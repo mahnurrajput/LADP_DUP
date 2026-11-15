@@ -218,7 +218,7 @@ class _TrackingTrainer(ReconstructionTrainer):
         self.train_loss_history: list[float] = []
         self.val_loss_history:   list[float] = []
 
-    def fit(self, cache_dir: str):  # type: ignore[override]
+    def fit(self, cache_dir: str, **kwargs):  # type: ignore[override]
         """Delegate to parent fit() while recording per-epoch losses.
 
         We wrap the private _train_epoch / _val_epoch methods at runtime so
@@ -246,7 +246,7 @@ class _TrackingTrainer(ReconstructionTrainer):
         self._train_epoch = tracked_train  # type: ignore[method-assign]
         self._val_epoch   = tracked_val    # type: ignore[method-assign]
 
-        result = parent.fit(cache_dir)
+        result = parent.fit(cache_dir, **kwargs)
 
         # Restore originals (not strictly needed but keeps object tidy).
         self._train_epoch = orig_train  # type: ignore[method-assign]
@@ -271,6 +271,17 @@ def main() -> None:
         required=True,
         help="Path to the LADP config YAML, e.g. configs/base_llava_vizwiz.yaml",
     )
+    parser.add_argument(
+        "--resume",
+        default=None,
+        help="Checkpoint to resume from: checkpoints/recon/last.pt (full state) "
+             "or checkpoints/recon/best.pt (weights only; needs --start-epoch "
+             "and --best-val).",
+    )
+    parser.add_argument("--start-epoch", type=int, default=1,
+                        help="First epoch to run when resuming from weights only.")
+    parser.add_argument("--best-val", type=float, default=float("inf"),
+                        help="Best val loss so far when resuming from weights only.")
     args = parser.parse_args()
 
     # ------------------------------------------------------------------
@@ -403,11 +414,38 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Train.
     # ------------------------------------------------------------------
+    fit_kwargs: dict = {}
+    if args.resume:
+        resume_path = Path(args.resume).resolve()
+        if not resume_path.exists():
+            logging.error("Resume checkpoint not found: %s", resume_path)
+            sys.exit(1)
+        fit_kwargs = {
+            "resume_from": str(resume_path),
+            "start_epoch": args.start_epoch,
+            "best_val_loss": args.best_val,
+        }
+        # Seed loss-curve history with the epochs already logged before the
+        # interruption so the final plot covers the whole run.
+        import re
+        prev: dict[int, tuple[float, float]] = {}
+        log_path = output_dir / "train_recon.log"
+        pat = re.compile(r"Epoch (\d+)/\d+ \| train_loss=([\d.]+) \| val_loss=([\d.]+)")
+        for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            m = pat.search(line)
+            if m:
+                prev[int(m.group(1))] = (float(m.group(2)), float(m.group(3)))
+        for ep in sorted(e for e in prev if e < args.start_epoch):
+            trainer.train_loss_history.append(prev[ep][0])
+            trainer.val_loss_history.append(prev[ep][1])
+        logging.info("Resuming from %s (%d earlier epoch(s) recovered from log)",
+                     resume_path, len(trainer.train_loss_history))
+
     logging.info("Starting training…")
     t0 = time.time()
 
     try:
-        best_net, norm_stats = trainer.fit(str(coco_cache_dir))
+        best_net, norm_stats = trainer.fit(str(coco_cache_dir), **fit_kwargs)
     except FileNotFoundError as exc:
         logging.error(
             "Training failed — could not load feature files: %s\n"
