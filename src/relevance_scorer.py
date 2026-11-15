@@ -4,21 +4,37 @@ relevance_scorer.py — LADP project
 Implements two relevance scorers for the Loss-Aware Dynamic Projection (LADP)
 pipeline.
 
-CLIPRelevanceScorer  (FIXED architecture — primary scorer)
-----------------------------------------------------------
-Computes Rᵢ = cosine_sim(Eᵢ_proj, q_CLIP) where:
-  - Eᵢ         : pre-connector CLIP vision features, shape (N, 1024)
-                  output of CLIP ViT-L/14 at the penultimate hidden layer
-  - Eᵢ_proj    : Eᵢ @ visual_proj  →  shape (N, 768) in the joint CLIP space
-  - q_CLIP      : CLIP text encoder output for the question, shape (768,)
-  - Both Eᵢ_proj and q_CLIP are L2-normalised before the dot product.
+CLIPRelevanceScorer  (primary scorer)
+-------------------------------------
+Rᵢ = cos( ln_post(Xᵢ) · W_proj ,  q_CLIP )  for every patch i, where
 
-Why this avoids the modality gap:
-  LLaVA-1.5 uses CLIP ViT-L/14 as its vision backbone.  The pre-connector
-  features Eᵢ ARE CLIP vision features.  CLIP's visual.proj maps them into
-  the shared image–text embedding space that CLIP was trained in.  The CLIP
-  text encoder lives in the same space.  Cosine similarity in that space is
-  therefore a principled relevance measure.
+  X        (N, 1024)  FINAL-layer CLIP ViT-L/14-336 patch tokens, CLS removed,
+                      *before* the final LayerNorm.  In LLaVA this is the
+                      vision tower's ``last_hidden_state[:, 1:]``
+                      (``src/feature_capture.py`` records it as ``E_final``).
+  ln_post  LayerNorm(1024)   CLIP's final LayerNorm (open_clip ``visual.ln_post``,
+                      = HF ``vision_model.post_layernorm``).
+  W_proj   (1024, 768)       CLIP's image projection (open_clip ``visual.proj``).
+  q_CLIP   (768,)            CLIP text embedding of the question.
+  Both sides are L2-normalised, so Rᵢ ∈ [-1, 1].
+
+Why this form (verified against open_clip's VisionTransformer, ViT-L-14-336:
+pool_type "tok", final_ln_after_pool False, no attentional pooling):
+CLIP's own image embedding is  ln_post(x)[:, 0] @ proj  — ln_post is applied to
+*all* final-layer tokens and proj maps width 1024 to the joint 768-d space.
+Applying the same two operations to the patch tokens x[:, 1:] puts each patch
+in the space the text encoder was trained to match; for the CLS token the
+formula reproduces CLIP's image embedding exactly (tested).
+
+The earlier version applied proj to the *penultimate*-layer tokens without
+ln_post (audit H3): a different layer and an un-normalised input, so its
+scores were not in CLIP's image–text space.
+
+Caveat (research decision, not settled by code): final-layer CLIP patch tokens
+are known to localise weakly, because CLIP was only trained on the pooled CLS
+token.  Whether this dense form, a value-path variant (MaskCLIP-style) or
+another feature works best must be measured against the VizWiz answer-grounding
+masks on the tuning split (scripts/validate_relevance_grounding.py).
 
   By contrast, the LLM-space approach (post-connector T in R^4096 vs.
   mean-token LLM embeddings) suffers from a modality gap: the LLM was not
@@ -114,32 +130,58 @@ class CLIPRelevanceScorer:
         for param in model.parameters():
             param.requires_grad_(False)
 
-        # Extract the visual projection matrix.
-        # In open_clip, for ViT-based models this lives at model.visual.proj
-        # and has shape (dv, embed_dim) = (1024, 768) for ViT-L/14.
-        if not hasattr(model.visual, "proj") or model.visual.proj is None:
+        v = model.visual
+        # The dense formula ln_post(x) @ proj is only CLIP's own readout for
+        # this pooling configuration (checked in open_clip's VisionTransformer).
+        if getattr(v, "proj", None) is None or getattr(v, "attn_pool", None) is not None \
+                or getattr(v, "pool_type", "tok") != "tok" or getattr(v, "final_ln_after_pool", False):
             raise RuntimeError(
-                f"open_clip model '{clip_model_name}' does not expose "
-                "model.visual.proj.  Ensure you are using a ViT-based model "
-                "with a linear projection head (e.g. ViT-L-14)."
-            )
-
-        # visual_proj: (dv, embed_dim) = (1024, 768)
-        # Register as a buffer-like attribute so it moves with device calls.
-        self._visual_proj: Tensor = model.visual.proj  # (1024, 768)
-
-        # Keep only the text encoder and discard the rest of the vision tower
-        # to save memory.  The text encoder is at model.token_embedding,
-        # model.positional_embedding, model.transformer, and model.text_projection
-        # in open_clip — it is simplest to keep the full model but only call
-        # model.encode_text().
-        self._model = model
+                f"open_clip model '{clip_model_name}' does not use CLS-token pooling with a "
+                "linear proj (pool_type='tok', no attentional pooling, ln_post before pooling); "
+                "the patch-embedding formula ln_post(x) @ proj does not apply to it.")
+        self._ln_post: torch.nn.LayerNorm = v.ln_post        # LayerNorm(1024)
+        self._visual_proj: Tensor = v.proj                   # (1024, 768)
+        self._model = model                                  # only encode_text() is called
         self._tokenizer = open_clip.get_tokenizer(clip_model_name)
+        self._encode_text_fn = None
+        self._check_dims()
+        logger.info("CLIPRelevanceScorer ready: ln_post %s, proj %s, text dim %d",
+                    tuple(self._ln_post.normalized_shape), tuple(self._visual_proj.shape),
+                    self._visual_proj.shape[1])
 
-        logger.info(
-            "CLIPRelevanceScorer ready.  visual_proj shape: %s",
-            tuple(self._visual_proj.shape),
-        )
+    # ------------------------------------------------------------------
+    @classmethod
+    def from_components(cls, ln_post: torch.nn.Module, visual_proj: Tensor,
+                        encode_text=None, device: str = "cpu") -> "CLIPRelevanceScorer":
+        """Build a scorer from its parts (tests, or weights taken from another CLIP copy).
+
+        ``encode_text(question) -> (768,)`` is only needed for :meth:`encode_question`.
+        """
+        self = object.__new__(cls)
+        self._device = torch.device(device)
+        self._clip_model_name, self._pretrained = "components", None
+        self._ln_post, self._visual_proj = ln_post, visual_proj
+        self._model, self._tokenizer, self._encode_text_fn = None, None, encode_text
+        self._check_dims()
+        return self
+
+    def _check_dims(self) -> None:
+        if self._visual_proj.dim() != 2:
+            raise ValueError(f"visual_proj must be 2-D, got {tuple(self._visual_proj.shape)}")
+        width = self._visual_proj.shape[0]
+        ln_shape = tuple(getattr(self._ln_post, "normalized_shape", (width,)))
+        if ln_shape != (width,):
+            raise ValueError(f"ln_post normalises {ln_shape} but proj expects width {width}")
+
+    @property
+    def width(self) -> int:
+        """Vision token width the scorer expects (1024 for ViT-L/14)."""
+        return int(self._visual_proj.shape[0])
+
+    @property
+    def embed_dim(self) -> int:
+        """Joint image-text embedding size (768 for ViT-L/14)."""
+        return int(self._visual_proj.shape[1])
 
     # ------------------------------------------------------------------
     # Text encoding
@@ -159,58 +201,66 @@ class CLIPRelevanceScorer:
         Tensor of shape (768,)
             L2-normalised CLIP text embedding for the question.
         """
-        tokens: Tensor = self._tokenizer([question]).to(self._device)
-        # encode_text returns (1, embed_dim) = (1, 768).
-        q_raw: Tensor = self._model.encode_text(tokens)  # (1, 768)
-        q_norm: Tensor = F.normalize(q_raw, p=2, dim=-1)  # (1, 768)
-        return q_norm.squeeze(0)  # (768,)
+        if self._model is None:
+            if self._encode_text_fn is None:
+                raise RuntimeError("No text encoder: build the scorer with open_clip or pass encode_text.")
+            q_raw = torch.as_tensor(self._encode_text_fn(question)).view(1, -1).float()
+        else:
+            tokens: Tensor = self._tokenizer([question]).to(self._device)
+            q_raw = self._model.encode_text(tokens)               # (1, 768)
+        if q_raw.shape[-1] != self.embed_dim:
+            raise ValueError(f"text embedding has {q_raw.shape[-1]} dims, image side {self.embed_dim}")
+        return F.normalize(q_raw.float(), p=2, dim=-1).squeeze(0)  # (768,)
 
     # ------------------------------------------------------------------
     # Per-image relevance scoring
     # ------------------------------------------------------------------
 
     @torch.no_grad()
-    def compute(self, E: Tensor, q_clip: Tensor) -> Tensor:
-        """Compute per-patch relevance scores for one image.
+    def patch_embeddings(self, X_final: Tensor) -> Tensor:
+        """Patch tokens in CLIP's joint space: L2norm( ln_post(X) @ W_proj ).
+
+        X_final : (N, width) final-layer tokens *before* ln_post
+                  (LLaVA: vision tower ``last_hidden_state[:, 1:]``).
+        returns : (N, embed_dim), unit norm.
+        """
+        if X_final.dim() != 2 or X_final.shape[-1] != self.width:
+            raise ValueError(f"expected final-layer tokens (N, {self.width}), got {tuple(X_final.shape)}")
+        P = self._visual_proj
+        ln = self._ln_post
+        X = X_final.to(P.device)
+        w = getattr(ln, "weight", None)
+        Z = ln(X.to(w.dtype if w is not None else torch.float32)).float() @ P.float()   # (N, 768)
+        return F.normalize(Z, p=2, dim=-1)
+
+    @torch.no_grad()
+    def compute(self, X_final: Tensor, q_clip: Tensor) -> Tensor:
+        """Per-patch relevance Rᵢ = cos( ln_post(Xᵢ) W_proj , q ) for one image.
 
         Parameters
         ----------
-        E : Tensor, shape (N, 1024)
-            Pre-connector CLIP vision features for N patches of one image.
-            These should be RAW (non-normalised) hidden states from the CLIP
-            vision tower penultimate layer, as returned by ``LlavaAdapter``.
-        q_clip : Tensor, shape (768,) or (1, 768)
-            L2-normalised CLIP text embedding of the question, as returned by
-            :meth:`encode_question`.
+        X_final : (N, 1024)  FINAL-layer CLIP patch tokens before ln_post, CLS
+                  removed (``LlavaFeatureCapture.E_final``).  NOT the
+                  penultimate-layer E that the connector and g_phi use.
+        q_clip  : (768,) or (1, 768) text embedding (:meth:`encode_question`).
 
         Returns
         -------
-        Tensor of shape (N,)
-            Cosine similarity Rᵢ for each patch i, in the range [-1, 1].
+        (N,) cosine similarities in [-1, 1].
 
-        Steps
-        -----
-        1. E_proj = E @ visual_proj                 → (N, 768)
-        2. E_norm = L2_normalise(E_proj, dim=-1)    → (N, 768)
-        3. q_norm = L2_normalise(q_clip, dim=-1)    → (1, 768)
-        4. R      = (E_norm @ q_norm.T).squeeze(-1) → (N,)
+        Steps and shapes
+        ----------------
+        1. Z  = ln_post(X_final)              (N, 1024)
+        2. P  = Z @ W_proj                    (N, 768)
+        3. P̂ = P / ||P||,  q̂ = q / ||q||     (N, 768), (1, 768)
+        4. R  = P̂ q̂ᵀ                         (N,)
         """
-        # Ensure E is on the same device as the projection matrix.
-        E = E.to(self._visual_proj.device)
-        q_clip = q_clip.to(self._visual_proj.device)
-
-        # Step 1: project pre-connector features into CLIP embedding space.
-        E_proj: Tensor = E.float() @ self._visual_proj.float()  # (N, 768)
-
-        # Step 2: L2-normalise the projected patches.
-        E_norm: Tensor = F.normalize(E_proj, p=2, dim=-1)  # (N, 768)
-
-        # Step 3: L2-normalise the question embedding (may already be, but
-        #         re-normalising is a no-op if the vector already has unit norm).
-        q_norm: Tensor = F.normalize(q_clip.view(1, -1).float(), p=2, dim=-1)  # (1, 768)
-
-        # Step 4: Cosine similarities via dot products.
-        R: Tensor = (E_norm @ q_norm.T).squeeze(-1)  # (N,)
+        q = q_clip.reshape(1, -1).float().to(self._visual_proj.device)
+        if q.shape[-1] != self.embed_dim:
+            raise ValueError(f"question embedding has {q.shape[-1]} dims; expected {self.embed_dim}")
+        E_norm = self.patch_embeddings(X_final)                   # (N, 768)
+        q_norm = F.normalize(q, p=2, dim=-1)                      # (1, 768)
+        R: Tensor = (E_norm @ q_norm.T).squeeze(-1)               # (N,)
 
         return R
 
@@ -229,8 +279,8 @@ class CLIPRelevanceScorer:
         Parameters
         ----------
         E_list : list of Tensor
-            Each element is a Tensor of shape (N, 1024) — pre-connector
-            features for one image.
+            Each element is a Tensor of shape (N, 1024) — FINAL-layer CLIP
+            patch tokens before ln_post (``E_final``) for one image.
         questions : list of str
             Question strings, one per image.  Must have the same length as
             ``E_list``.
@@ -439,15 +489,9 @@ if __name__ == "__main__":
     DV = 1024     # pre-connector CLIP vision hidden dim
     CLIP_DIM = 768  # joint CLIP embedding space dim
 
-    # Create a CLIPRelevanceScorer instance without calling __init__ so we
-    # can inject a mock projection matrix without loading open_clip.
-    scorer = object.__new__(CLIPRelevanceScorer)
-    scorer._device = torch.device("cpu")
-    scorer._clip_model_name = "ViT-L-14-336"
-    scorer._pretrained = "openai"
-    # Mock visual_proj: (1024, 768) random orthogonalish matrix.
+    # Mock ln_post / visual_proj so no open_clip weights are needed.
     mock_proj = torch.randn(DV, CLIP_DIM)
-    scorer._visual_proj = mock_proj
+    scorer = CLIPRelevanceScorer.from_components(torch.nn.LayerNorm(DV), mock_proj)
 
     # Synthetic pre-connector features and question embedding.
     E_fake = torch.randn(N, DV)
