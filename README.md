@@ -88,6 +88,21 @@ config of its own architecture. The `norm_stats.pt` (mean/std, p5/p95) also belo
 to the model it was trained with. The pilot checkpoint loads into `mlp3_small` on
 both branches.
 
+### Trained checkpoints (download)
+
+Checkpoints are not in git (`checkpoints/` is ignored). The FYP-1 checkpoints are
+attached to the release
+[**fyp1-checkpoints**](https://github.com/Faryal-Zahra/-loss-aware-dynamic-projection/releases/tag/fyp1-checkpoints)
+as `ladp_checkpoints_fyp1.zip`:
+
+| Files | Model | Put in |
+|---|---|---|
+| `mlp3_paper_10k_best.pt`, `mlp3_paper_10k_norm_stats.pt` | `mlp3_paper` (27.3M), 10k images | `checkpoints/recon_paper_10k_mlp3_paper/` as `best.pt`, `norm_stats.pt` |
+| `pilot_mlp3_small_best.pt`, `pilot_mlp3_small_norm_stats.pt` | `mlp3_small` pilot (14.7M) | `checkpoints/recon_pilot/` as `best.pt`, `norm_stats.pt` |
+
+The zip also holds both configs, a `README.txt` and `SHA256SUMS.txt`
+(`sha256sum -c SHA256SUMS.txt`).
+
 ## Repository layout
 
 | Path | Contents |
@@ -254,10 +269,10 @@ python -m pytest tests -q          # 317 tests on this branch (real-data tests s
 | Baseline on VizWiz val (4,319 examples; tuning VQA accuracy 0.528) | Done |
 | COCO feature cache (10,000 images, validated) | Done |
 | g_φ pilot (`mlp3_small`, Adam) on 10k images | Done (best val MSE 0.072404, epoch 16) |
-| g_φ `mlp3_paper` + AdamW/warm-up/cosine | Implemented, audited and unit-tested; not trained yet |
+| g_φ `mlp3_paper` + AdamW/warm-up/cosine on 10k images | Done (best val MSE 0.1417, 30/30 epochs; checkpoint in release `fyp1-checkpoints`) |
 | Full-COCO cache (118,287 images) | Planned: needs ≥ 61.3 GB more free space on E: |
 | On-the-fly E/T extraction (`VisionProjector`) | Implemented; matches cached features exactly |
-| Stage-1 diagnostic (KNOR, loss–error correlation) | Fixed and tested; not run yet |
+| Stage-1 diagnostic (KNOR, loss–error correlation) | Done for `mlp3_paper` 10k (1,000 tuning examples): VQA acc 0.5858, Spearman r = +0.182, KNOR@10 = 0.476 (`results/paper_10k_mlp3_paper/vizwiz_diagnostic/`) |
 | Preservation strategies (HT, SR, HRR) | Not started |
 
 ## Datasets and models
