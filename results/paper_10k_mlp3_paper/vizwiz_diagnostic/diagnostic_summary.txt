@@ -1,0 +1,24 @@
+=================================================================
+LADP Stage 1 Diagnostic — Summary Report
+=================================================================
+
+  Examples evaluated      : 1000  (VizWiz val tuning split)
+  VQA accuracy (official) : 0.5854
+  Any-annotator match     : 68.4%  (binary label; not VQA accuracy)
+  Mean patch loss         : 0.15269  (1000 examples with features)
+
+--- Loss vs VQA error (primary: error = 1 - VQA accuracy) ---
+  Pearson  r              : +0.1639  (p=1.881e-07)
+  Spearman r              : +0.1897  (p=1.495e-09)
+  (positive r: higher loss goes with lower accuracy)
+
+--- Loss vs no-annotator-match (secondary, binary) ---
+  Pearson  r              : +0.1425  (p=6.053e-06)
+  Mean loss (match / none): 0.14864 / 0.16144
+
+--- KNOR ---
+  k / mean / std          : 10 / 0.4730 / 0.1955
+  (1.0 = neighbourhoods fully preserved by the connector; no threshold is taken from the paper)
+
+  Elapsed time            : 485.3s
+=================================================================

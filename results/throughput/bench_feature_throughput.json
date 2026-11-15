@@ -1,0 +1,168 @@
+{
+  "when": "2026-11-14 20:13:17",
+  "quick": false,
+  "gpu": "NVIDIA RTX A4000",
+  "torch": "2.11.0+cu128",
+  "other_gpu_processes_at_start": [
+    "2584, [Insufficient Permissions]",
+    "13256, C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe",
+    "2880, C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\SearchHost.exe",
+    "8600, C:\\Windows\\explorer.exe",
+    "3460, C:\\Program Files\\TeamViewer\\TeamViewer.exe",
+    "13868, C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\157.0.4341.46\\msedgewebview2.exe",
+    "7076, C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "16276, C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe",
+    "17160, C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\157.0.4341.46\\msedgewebview2.exe",
+    "17916, C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "18284, C:\\Program Files (x86)\\Microsoft\\Copilot\\Application\\copilotapp.exe",
+    "21016, C:\\Users\\LAB\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+    "22576, C:\\Windows\\SystemApps\\ShellExperienceHost_cw5n1h2txyewy\\ShellExperienceHost.exe",
+    "5380, [Insufficient Permissions]",
+    "10296, C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "22824, C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "5876, C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.25.3131.0_x64__8wekyb3d8bbwe\\WindowsTerminal.exe"
+  ],
+  "load_s": 16.702980100000786,
+  "vision_projector_params": 324487168,
+  "verify": {
+    "n_images": 32,
+    "max_abs_diff_E": 0.0,
+    "max_abs_diff_T": 0.0,
+    "batched_max_abs_diff_E": 9.03125,
+    "batched_max_abs_diff_T": 4.109375,
+    "min_patch_cosine": 0.9999991059303284,
+    "E_abs_scale": 0.6210563778877258,
+    "T_abs_scale": 0.46055665612220764
+  },
+  "gpu_only": {
+    "1": {
+      "images_per_s": 52.0738813814806,
+      "peak_mem_gib": 0.6584820747375488
+    },
+    "16": {
+      "images_per_s": 89.57829338795622,
+      "peak_mem_gib": 1.2925424575805664
+    },
+    "32": {
+      "images_per_s": 87.80700174677698,
+      "peak_mem_gib": 1.9717645645141602
+    },
+    "64": {
+      "images_per_s": 86.41112197551017,
+      "peak_mem_gib": 3.3302087783813477
+    },
+    "128": {
+      "images_per_s": 80.36604775831513,
+      "peak_mem_gib": 6.051003456115723
+    }
+  },
+  "e2e": {
+    "bs1": {
+      "4": {
+        "images_per_s": 42.97068377693656,
+        "images_timed": 1536
+      },
+      "8": {
+        "images_per_s": 42.74362085686853,
+        "images_timed": 1536
+      },
+      "12": {
+        "images_per_s": 45.684902707694825,
+        "images_timed": 1536
+      }
+    },
+    "bs32": {
+      "4": {
+        "images_per_s": 49.94637674399179,
+        "images_timed": 1536
+      },
+      "8": {
+        "images_per_s": 71.19655950783955,
+        "images_timed": 1536
+      },
+      "12": {
+        "images_per_s": 75.73125478385863,
+        "images_timed": 1536
+      }
+    }
+  },
+  "gphi_train": {
+    "mlp3_paper@128": {
+      "patches_per_s": 10026.947421149673
+    },
+    "mlp3_paper@4096": {
+      "patches_per_s": 57137.45267942912
+    },
+    "mlp3_paper@36864": {
+      "patches_per_s": 54880.643532717455
+    },
+    "mlp3_paper@73728": {
+      "patches_per_s": 45019.74834786021
+    },
+    "mlp3_small@128": {
+      "patches_per_s": 24063.72374837886
+    },
+    "mlp3_small@4096": {
+      "patches_per_s": 82495.90390504828
+    },
+    "mlp3_small@36864": {
+      "patches_per_s": 84943.3783394441
+    },
+    "mlp3_small@73728": {
+      "patches_per_s": 82783.72863178056
+    }
+  },
+  "loop_cache": {
+    "images_timed": 1408,
+    "seconds": 112.3138971999997,
+    "images_per_s": 12.536293683165004,
+    "patches_per_s": 7220.905161503043,
+    "first_index": 3500
+  },
+  "loop_onthefly": {
+    "images_timed": 1536,
+    "seconds": 32.97423560000061,
+    "images_per_s": 46.58182280956261,
+    "patches_per_s": 26831.129938308066,
+    "workers": 12,
+    "peak_mem_gib": 9.832023620605469
+  },
+  "estimates": {
+    "n_images": 118287,
+    "n_train_images": 112373,
+    "n_val_images": 5914,
+    "steps_per_epoch_at_128_images": 878,
+    "extract_once_s": 2589.192336839028,
+    "full_cache_GB": 697.68511488,
+    "gphi_compute_per_epoch_s[mlp3_paper@128]": 6455.289459628834,
+    "gphi_compute_per_epoch_s[mlp3_paper@4096]": 1132.8269806347746,
+    "gphi_compute_per_epoch_s[mlp3_paper@36864]": 1179.411242898649,
+    "gphi_compute_per_epoch_s[mlp3_paper@73728]": 1437.7434431633483,
+    "gphi_compute_per_epoch_s[mlp3_small@128]": 2689.810133993105,
+    "gphi_compute_per_epoch_s[mlp3_small@4096]": 784.6068099877997,
+    "gphi_compute_per_epoch_s[mlp3_small@36864]": 761.9999258958553,
+    "gphi_compute_per_epoch_s[mlp3_small@73728]": 781.8788676202663,
+    "onthefly_extract_per_epoch_s": 2589.192336839028,
+    "epoch_upper_bound_min[loop_cache]": 157.25939817822402,
+    "epoch_upper_bound_min[loop_onthefly]": 42.32230258699297
+  },
+  "other_gpu_processes_at_end": [
+    "2584, [Insufficient Permissions]",
+    "13256, C:\\Windows\\SystemApps\\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\\StartMenuExperienceHost.exe",
+    "2880, C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\SearchHost.exe",
+    "8600, C:\\Windows\\explorer.exe",
+    "3460, C:\\Program Files\\TeamViewer\\TeamViewer.exe",
+    "13868, C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\157.0.4341.46\\msedgewebview2.exe",
+    "7076, C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "16276, C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\TextInputHost.exe",
+    "17160, C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\157.0.4341.46\\msedgewebview2.exe",
+    "17916, C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "18284, C:\\Program Files (x86)\\Microsoft\\Copilot\\Application\\copilotapp.exe",
+    "21016, C:\\Users\\LAB\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+    "22576, C:\\Windows\\SystemApps\\ShellExperienceHost_cw5n1h2txyewy\\ShellExperienceHost.exe",
+    "5380, [Insufficient Permissions]",
+    "10296, C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "22824, C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "5876, C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.25.3131.0_x64__8wekyb3d8bbwe\\WindowsTerminal.exe"
+  ]
+}
